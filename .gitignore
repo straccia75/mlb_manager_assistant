@@ -1,0 +1,13 @@
+# Hidding Secrets and Passowrds
+.env
+
+# Hidding DB
+*.db
+
+# Hidding Python Trash
+__pycache__/
+*.pyc
+
+# Hidding Virtual Environments
+venv/
+env/
