@@ -9,8 +9,8 @@ print(f"Looking for: {player_name}...")
 player_file = statsapi.lookup_player(player_name)
 
 # 3. Printing RAW Data so I can see what it looks like.
-print("\nReceived Data:")
-print(player_file)
+#print("\nReceived Data:")
+#print(player_file)
 
 ## The data I got is a nested list with dictionaries inside, so a JSON File!... EXCITING!
 ## I can see the first info I get is the player id number... Meaning the MLB Api doesnt understand
@@ -21,7 +21,7 @@ print(player_file)
 
 def extract_mlb_data(player_data):
 
-    
+    player_stats = {} #This will save all info needed to be returned and then used for Pandas Conversion to DataFrame
 
     #This Dictionary is a Conceptual Dictionary I will use to extract position so I dont need to write a LONG ASS IF/ELIF/ELSE rule to match it.
     #I will also be using this dictionary with .map() so I can normalize a full data frame position column
@@ -88,6 +88,7 @@ def extract_mlb_data(player_data):
         player_info = player_data[0]
         player_team_id = player_info["currentTeam"]["id"]
         player_id = player_info["id"]
+        player_name = player_info["fullName"]
     
     except IndexError:
         return f"{player_data} Returned an EMPTY LIST"
@@ -152,12 +153,31 @@ def extract_mlb_data(player_data):
             hitting_stats = statsapi.player_stat_data(player_id, group="hitting", type="season")
             fielding_stats = statsapi.player_stat_data(player_id, group="fielding", type="season")
         except Exception as e:
-            return f"{e} Returned an empty list"        
-        
+            return f"{e} Returned an empty list"
 
+    #ACCESSING INFO IN THE JSON BEFORE PASS IT THROUGH THE DICTIONARY.
+
+    real_hitting_stats = hitting_stats["stats"][0]["stats"]
+    real_fielding_stats = fielding_stats["stats"][0]["stats"]
+    real_pitching_stats = pitching_stats["stats"][0]["stats"]       
     
-    return hitting_stats, pitching_stats, fielding_stats
-
+    #For the initial stages of the Assistant BOT program, only some metrics are needed. 
+    #This diccionary stores all the info I need to conver to a pandas dataframe
+    player_stats = {
+        "id": player_id,
+        "Name": player_name,
+        "Current Team": player_team_name,
+        "Home Runs": real_hitting_stats.get("homeRuns", 0) if hitting_stats else 0, #Avoiding an error if some stats are empty. Handling the case of the TWP players
+        "RBI": real_hitting_stats.get("rbi", 0) if hitting_stats else 0,
+        "Average": real_hitting_stats.get("avg", 0) if hitting_stats else 0,
+        "Strike Outs": real_pitching_stats.get("strikeOuts", 0) if pitching_stats else 0,
+        "ERA": real_pitching_stats.get("era", 0) if pitching_stats else 0,
+        "WHIP": real_pitching_stats.get("whip", 0) if pitching_stats else 0,
+        "Errors": real_fielding_stats.get("errors") if fielding_stats else 0,
+        "Fielding %": real_fielding_stats.get("fielding") if fielding_stats else 0
+    }
+    
+    return player_stats
 #For what I can see Data for stats is messy and also returns a lot of metrics... most of them I dont need:
 #that we dont need yet so I will be cleaning and extracting with another function. 
 # #I will convert to a Panda DataFrame for better handling
