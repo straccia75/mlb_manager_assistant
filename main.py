@@ -5,6 +5,8 @@ import sqlite3
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from dotenv import load_dotenv
+#This is the library that will help me change from a static csv file i got from Kaggle to a LIVE MLB API so I get REAL TIME DATA!!! 
+import statsapi
 #Loading variables in the memory
 load_dotenv()
 
