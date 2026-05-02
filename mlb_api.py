@@ -230,12 +230,54 @@ def create_update_db(mlb_df, db_name="MLB_Player_Stats.db"):
     In case the MLB API fails, the bot will have up-to-date information
     in the DB available"""
 
+# SQLite DB Connection
     conn = sqlite3.connect(db_name)
+    cursor = conn.cursor() #will use the cursor to classify and set up conditionals for Upsert/Insert processes
 
+    try:
+        #I am Isolating the Identification through player_id
+        # Extracting the exact value and then making sure it is good for SQL database with an int()
+        player_id = int(mlb_df["id"].iloc[0])
+
+        # Verifying if the ID is on the DB.
+        # The old trick, SQL Injection... Avoided with ?
+        cursor.execute("SELECT id FROM player_stats WHERE id = ?", (player_id,))
+        result = cursor.fetchone() # Returns None if nothing is found
+
+        # Paso 4: La Decisión
+        if result is None:
+            # First Way: It doesnt exists. We create it at the end.
+            mlb_df.to_sql("player_stats", conn, if_exists="append", index=False)
+            message = f"Success: New Player {player_id} added."
+        else:
+            # Second Way: It existst already. I upsert).
+            cursor.execute("DELETE FROM player_stats WHERE id = ?", (player_id,))
+            mlb_df.to_sql("player_stats", conn, if_exists="append", index=False)
+            message = f"Success: Player Updated. {player_id} stats updated."
+
+    except sqlite3.OperationalError:
+        # If the SELECT method fails then it is because table "player_stats" doesnt exists.
+        # If it is the first time the bot is being run then OC it doesnt exists. 
+        # Pandas will create the table with the method .append()
+        mlb_df.to_sql("player_stats", conn, if_exists="append", index=False)
+        message = "Data Base has been created and player added successfully"
+
+    except Exception as e:
+        # Si explota por cualquier otra razón, atrapamos el error
+        mensaje = f"Error {e}"
+
+    finally:
+        # I need the connection closed no matter what happened previosuly, so we manage memory efficiently.
+        conn.commit()
+        conn.close()
+
+    return message
 
 
 
 
 player_stats_individual = extract_mlb_data(player_file)
 
-print(normalize_data_todb(player_stats_individual))
+player_stats_clean = normalize_data_todb(player_stats_individual)
+
+print(create_update_db(player_stats_clean))
