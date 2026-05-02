@@ -1,5 +1,7 @@
 #This library is responsible for connecting to MLB Real Time Data! LETS DO THIS!
 import statsapi
+import pandas as pd
+import sqlite3
 #QUICK TEST TO SEE WHAT DATA STRUCTURE THE API RESPONSE HAS SO I CAN STUDY HOW TO TRANSFORM AND USE IN MY BOT
 # 1. LOOKING FOR A PLAYER
 player_name = "Ohtani"
@@ -89,9 +91,10 @@ def extract_mlb_data(player_data):
         player_team_id = player_info["currentTeam"]["id"]
         player_id = player_info["id"]
         player_name = player_info["fullName"]
+        player_debut_date = player_info["mlbDebutDate"] #Good to know when the player started on the MLB.
     
-    except IndexError:
-        return f"{player_data} Returned an EMPTY LIST"
+    except (IndexError, KeyError):
+        return f"{player_data} Returned an EMPTY LIST or the KEY doesnt Exists"
     
     #I didnt add error Handling to extract info because I assume if the API returns info, it will be complete... 
     # We will see later what kind of problems we could have, for now it will stay as is.
@@ -156,10 +159,10 @@ def extract_mlb_data(player_data):
             return f"{e} Returned an empty list"
 
     #ACCESSING INFO IN THE JSON BEFORE PASS IT THROUGH THE DICTIONARY.
-
-    real_hitting_stats = hitting_stats["stats"][0]["stats"]
-    real_fielding_stats = fielding_stats["stats"][0]["stats"]
-    real_pitching_stats = pitching_stats["stats"][0]["stats"]       
+    # Avoiding None Error as I stated the variables before as None
+    real_hitting_stats = hitting_stats["stats"][0]["stats"] if hitting_stats and len(hitting_stats.get("stats", [])) > 0 else {}
+    real_fielding_stats = fielding_stats["stats"][0]["stats"] if fielding_stats and len(fielding_stats.get("stats", [])) > 0 else {}
+    real_pitching_stats = pitching_stats["stats"][0]["stats"] if pitching_stats and len(pitching_stats.get("stats", [])) > 0 else {}       
     
     #For the initial stages of the Assistant BOT program, only some metrics are needed. 
     #This diccionary stores all the info I need to conver to a pandas dataframe
@@ -167,10 +170,11 @@ def extract_mlb_data(player_data):
         "id": player_id,
         "Name": player_name,
         "Current Team": player_team_name,
+        "MLB Debut Date": player_debut_date,
         "Home Runs": real_hitting_stats.get("homeRuns", 0) if hitting_stats else 0, #Avoiding an error if some stats are empty. Handling the case of the TWP players
         "RBI": real_hitting_stats.get("rbi", 0) if hitting_stats else 0,
         "Average": real_hitting_stats.get("avg", 0) if hitting_stats else 0,
-        "Strike Outs": real_pitching_stats.get("strikeOuts", 0) if pitching_stats else 0,
+        "Strike Outs (P)": real_pitching_stats.get("strikeOuts", 0) if pitching_stats else 0,
         "ERA": real_pitching_stats.get("era", 0) if pitching_stats else 0,
         "WHIP": real_pitching_stats.get("whip", 0) if pitching_stats else 0,
         "Errors": real_fielding_stats.get("errors") if fielding_stats else 0,
@@ -182,9 +186,56 @@ def extract_mlb_data(player_data):
 #that we dont need yet so I will be cleaning and extracting with another function. 
 # #I will convert to a Panda DataFrame for better handling
 
-
-print(extract_mlb_data(player_file))
-
     
 
+def normalize_data_todb(player_stats_dict):
 
+    """This function uses a JSON Dict to convert 
+    it to a Pandas DataFrame to then save on a local SQLite DB.
+    One of the incredible challenges I had was to make sure 
+    data types were correct to be used and store correctly on the DB"""
+
+    #Envolving the dict in a list so PANDAS doesnt go CUCU on me
+
+    player_stats_dict = [player_stats_dict]
+
+    #Creating the new Pandas DataFrame from the dict. I will look very simple and might raise questions as: 
+    # IF INFO IS NOT COMPLEX, WHY CONVERTIR TO A PANDAS DATAFRAME? SHORT ANSWER IS: IT IS EASIER TO MANIPULATE AND THEN UPLOAD TO DATABASE
+
+    df_mlb_player = pd.DataFrame.from_dict(player_stats_dict)
+
+    #DATA CLEANING AND NORMALIZATION SECTION
+    #If by anychance the Debut Date is not valid, an NaN Value will be assign to it, system wont crash
+    df_mlb_player["MLB Debut Date"] = pd.to_datetime(df_mlb_player["MLB Debut Date"], errors="coerce")
+
+    #By doing .info() I figured Averate is in str format so lets change that to Float. We will do the same to ERA, WHIP and Fielding %.
+    #By using to_numeric() pandas built in function I am making sure of the data is just trash the program wont break and will assign an NaN value
+    df_mlb_player["ERA"] = pd.to_numeric(df_mlb_player["ERA"], errors="coerce")
+    df_mlb_player["Average"] = pd.to_numeric(df_mlb_player["Average"], errors="coerce")
+    df_mlb_player["WHIP"] = pd.to_numeric(df_mlb_player["WHIP"], errors="coerce")
+    df_mlb_player["Fielding %"] = pd.to_numeric(df_mlb_player["Fielding %"], errors="coerce")
+
+    #.info() throws that columns like Home Runs and those that are supposed to be an integer, by default from the JSON it is reading them as integers
+    #So no extra lines needed to convert to integer datatypes
+
+    return df_mlb_player
+
+def create_update_db(mlb_df, db_name="MLB_Player_Stats.db"):
+    
+    """This function grabs a dataframe and creates a Data Base,
+    if player_id has not been previously created then it creates a new row,
+    if it already existst then UPSERTS the info and it gets updated.
+    
+    Important to notice that a DB grants flexibility to the MLB Bot.
+    In case the MLB API fails, the bot will have up-to-date information
+    in the DB available"""
+
+    conn = sqlite3.connect(db_name)
+
+
+
+
+
+player_stats_individual = extract_mlb_data(player_file)
+
+print(normalize_data_todb(player_stats_individual))
